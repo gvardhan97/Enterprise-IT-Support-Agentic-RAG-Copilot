@@ -539,5 +539,56 @@ Protected by the `X-Admin-Key` request header.
 
 Uploads a document and adds its chunks to Pinecone.
 
+### `GET /api/metrics`
+
+Live telemetry for `/api/chat` since the server started:
+
+```json
+{
+  "requests": 120,
+  "errors": 2,
+  "error_rate": 0.017,
+  "source_used": {"private_kb": 81, "web_search": 24, "direct": 11, "insufficient_evidence": 2},
+  "web_fallback_rate": 0.203,
+  "latency_ms": {"p50": 1840.2, "p95": 4210.7, "max": 6022.1}
+}
+```
+
+A rising `web_fallback_rate` means the private KB is missing answers employees ask for, which tells the IT team which documents to write next. Each chat also logs its source and latency.
+
+---
+
+## 11. Testing
+
+The test suite runs without any API keys. OpenAI, Pinecone and Tavily are replaced with fakes, so every LangGraph path can be tested quickly and gives the same result every run.
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest --cov=app
+```
+
+| Area | What is tested |
+|---|---|
+| Agent workflow | Every route through the graph: direct reply, KB answer, web fallback, query rewrite and retry, give-up after retries; citation de-duplication |
+| API | Chat responses and audit rows, input validation, 500 on failures, admin-key check, unsupported uploads, upload path traversal |
+| Ingestion | `.txt`, `.md`, `.docx`, `.pdf` loading; chunk size, overlap and offsets |
+| Vector store | Embedding dimensions; Pinecone index create / keep / recreate on dimension change |
+| Audit and metrics | SQLite audit rows, SQL injection safety, latency percentiles, error and fallback rates |
+
+GitHub Actions runs the suite on every push and pull request and fails if coverage drops below 90%.
+
+---
+
+## Credits
+
+This project is based on [entbappy/Enterprise-IT-Support-Agentic-RAG-Copilot](https://github.com/entbappy/Enterprise-IT-Support-Agentic-RAG-Copilot) (Apache 2.0). The original app, agent workflow and UI are entbappy's work.
+
+Added in this fork by [gvardhan97](https://github.com/gvardhan97):
+
+- Automated test suite (56 tests, 95% coverage) with fakes for every external service
+- GitHub Actions CI with a coverage gate
+- Chat telemetry: the `/api/metrics` endpoint and latency logging
+- Fix for a Starlette `TemplateResponse` deprecation
+
 ---
 
