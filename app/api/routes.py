@@ -1,12 +1,16 @@
+import logging
+import time
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Header
 from pydantic import BaseModel, Field
 from app.core.config import get_settings
 from app.rag.workflow import ask
-from app.rag.vectorstore import add_documents 
+from app.rag.vectorstore import add_documents
+from app.services import metrics
 from app.services.ingestion import load_file, chunk_documents, SUPPORTED
 from app.services.audit import write_audit
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 settings = get_settings()
 
@@ -19,11 +23,20 @@ def health():
     return {"status": "ok", "service": settings.app_name}
 
 
+@router.get("/metrics")
+def metrics_view():
+    return metrics.snapshot()
+
+
 @router.post("/chat")
 def chat(payload: ChatRequest):
+    start = time.perf_counter()
     try:
         result = ask(payload.question)
         write_audit(payload.question, result["source_used"], result.get("trace", []))
+        latency_ms = (time.perf_counter() - start) * 1000
+        metrics.record_chat(result["source_used"], latency_ms)
+        logger.info("chat answered source=%s latency_ms=%.1f", result["source_used"], latency_ms)
 
         return {
             "answer": result["answer"],
@@ -35,6 +48,8 @@ def chat(payload: ChatRequest):
         }
 
     except Exception as exc:
+        metrics.record_error()
+        logger.exception("chat failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
